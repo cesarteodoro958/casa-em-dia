@@ -67,17 +67,25 @@ let cloudReady=false,cloudTimer=null;
 function authMessage(msg){const el=document.getElementById('authMessage');if(el)el.textContent=msg}
 function showApp(){document.getElementById('authGate').style.display='none';document.querySelector('.shell').classList.add('ready')}
 async function syncFromCloud(){
- const {data:rows,error}=await supabaseClient.from('entries').select('id,type,amount,category,description,date,person,created').order('date',{ascending:true});
+ const {data:userData,error:userError}=await supabaseClient.auth.getUser();
+ if(userError)throw userError;
+ if(!userData.user)throw new Error('Sessão não encontrada. Entre novamente.');
+ const ownerId=userData.user.id;
+ const {data:rows,error}=await supabaseClient.from('entries').select('id,type,amount,category,description,date,person,created_at').eq('owner_id',ownerId).order('date',{ascending:true});
  if(error)throw error;
  if(rows&&rows.length){
-  data.entries=rows.map(x=>({id:String(x.id),type:x.type,amount:Number(x.amount),category:x.category,description:x.description,date:String(x.date).slice(0,10),person:x.person||'Casa',created:Number(x.created)||Date.now()}));
+  data.entries=rows.map(x=>({id:String(x.id),type:x.type,amount:Number(x.amount),category:x.category,description:x.description,date:String(x.date).slice(0,10),person:x.person||'Casa',created:x.created_at?new Date(x.created_at).getTime():Date.now()}));
   persist();
  }else if(data.entries.length){await pushToCloud();}
  cloudReady=true;render();
 }
 async function pushToCloud(){
  if(!cloudReady)return;
- const rows=data.entries.map(x=>({id:String(x.id),type:x.type,amount:x.amount,category:x.category,description:x.description,date:x.date,person:x.person||'Casa',created:Number(x.created)||Date.now()}));
+ const {data:userData,error:userError}=await supabaseClient.auth.getUser();
+ if(userError)throw userError;
+ if(!userData.user)throw new Error('Sessão não encontrada. Entre novamente.');
+ const ownerId=userData.user.id;
+ const rows=data.entries.map(x=>({id:String(x.id),owner_id:ownerId,type:x.type,amount:x.amount,category:x.category,description:x.description,date:x.date,person:x.person||'Casa',created_at:new Date(Number(x.created)||Date.now()).toISOString()}));
  if(rows.length){const {error}=await supabaseClient.from('entries').upsert(rows,{onConflict:'id'});if(error)throw error;}
 }
 function queueCloudSync(){if(!cloudReady)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(()=>pushToCloud().catch(e=>toast('Falha ao sincronizar: '+e.message)),500)}
